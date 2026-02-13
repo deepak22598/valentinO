@@ -8,11 +8,15 @@ function Home() {
 
   const generateLink = () => {
     if (name.trim()) {
-      // Encode name using base64 for cleaner URL
-      const encodedName = btoa(encodeURIComponent(name.trim())).replace(/[+/=]/g, (match) => {
-        return { '+': '-', '/': '_', '=': '' }[match]
-      })
-      const shareableLink = `${window.location.origin}/${encodedName}`
+      // Double encode: first URI encode, then base64, then URL-safe
+      const uriEncoded = encodeURIComponent(name.trim())
+      const base64Encoded = btoa(uriEncoded)
+      // Make URL-safe and remove padding
+      const urlSafeEncoded = base64Encoded
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '')
+      const shareableLink = `${window.location.origin}/${urlSafeEncoded}`
       setLink(shareableLink)
     }
   }

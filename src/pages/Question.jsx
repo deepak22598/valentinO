@@ -8,7 +8,11 @@ function Question() {
   // Decode base64 encoded name
   let decodedName = ''
   try {
-    const base64Decoded = atob(name.replace(/[-_]/g, (match) => ({ '-': '+', '_': '/' }[match])))
+    // Restore URL-safe base64 to standard base64
+    const base64String = (name || '').replace(/-/g, '+').replace(/_/g, '/')
+    // Add padding if needed
+    const paddedBase64 = base64String + '='.repeat((4 - base64String.length % 4) % 4)
+    const base64Decoded = atob(paddedBase64)
     decodedName = decodeURIComponent(base64Decoded)
   } catch (e) {
     // Fallback to direct decode if not base64
@@ -21,6 +25,7 @@ function Question() {
   const [showModal, setShowModal] = useState(false)
   const [noButtonPosition, setNoButtonPosition] = useState({ x: 0, y: 0 })
   const noButtonRef = useRef(null)
+  const yesButtonRef = useRef(null)
   const buttonsContainerRef = useRef(null)
   const lastMoveTime = useRef(0)
 
@@ -80,53 +85,156 @@ function Question() {
   }
 
   const moveNoButton = () => {
-    if (noButtonRef.current && buttonsContainerRef.current) {
+    if (noButtonRef.current && buttonsContainerRef.current && yesButtonRef.current) {
       const container = buttonsContainerRef.current
-      const button = noButtonRef.current
+      const noButton = noButtonRef.current
+      const yesButton = yesButtonRef.current
       
       const containerWidth = container.offsetWidth || 600
       const containerHeight = container.offsetHeight || 200
-      const buttonWidth = button.offsetWidth || 100
-      const buttonHeight = button.offsetHeight || 50
+      const noButtonWidth = noButton.offsetWidth || 100
+      const noButtonHeight = noButton.offsetHeight || 50
+      
+      // Get YES button position relative to container
+      const yesButtonRect = yesButton.getBoundingClientRect()
+      const containerRect = container.getBoundingClientRect()
+      const yesButtonX = yesButtonRect.left - containerRect.left
+      const yesButtonY = yesButtonRect.top - containerRect.top
+      const yesButtonWidth = yesButton.offsetWidth || 150
+      const yesButtonHeight = yesButton.offsetHeight || 60
       
       // Calculate available space, leaving some padding
       const padding = 20
-      const maxX = Math.max(padding, containerWidth - buttonWidth - padding)
-      const maxY = Math.max(padding, containerHeight - buttonHeight - padding)
+      const minDistanceFromYes = 40 // Minimum gap between buttons (increased)
+      const maxX = Math.max(padding, containerWidth - noButtonWidth - padding)
+      const maxY = Math.max(padding, containerHeight - noButtonHeight - padding)
       
-      // Generate random position within bounds, ensuring it moves to very different coordinates
+      // Generate random position that doesn't overlap with YES button
       let newX, newY, attempts = 0
-      do {
+      let validPosition = false
+      
+      while (attempts < 50 && !validPosition) {
         // Use more varied random distribution
         const randomFactor = Math.random()
-        if (randomFactor < 0.33) {
-          // Top area
+        if (randomFactor < 0.25) {
+          // Top area (above YES button if YES is in center)
           newX = Math.random() * (maxX - padding) + padding
-          newY = Math.random() * (maxY * 0.4) + padding
-        } else if (randomFactor < 0.66) {
-          // Bottom area
-          newX = Math.random() * (maxX - padding) + padding
-          newY = Math.random() * (maxY * 0.4) + (maxY * 0.6)
-        } else {
-          // Left or right area
-          const side = Math.random() < 0.5
-          if (side) {
-            newX = Math.random() * (maxX * 0.4) + padding
+          newY = Math.random() * Math.min(maxY * 0.3, yesButtonY - minDistanceFromYes - noButtonHeight) + padding
+        } else if (randomFactor < 0.5) {
+          // Bottom area (below YES button)
+          const bottomStartY = yesButtonY + yesButtonHeight + minDistanceFromYes
+          if (bottomStartY < maxY) {
+            newX = Math.random() * (maxX - padding) + padding
+            newY = Math.random() * (maxY - bottomStartY) + bottomStartY
+          } else {
+            // If no space below, try top
+            newX = Math.random() * (maxX - padding) + padding
+            newY = Math.random() * Math.min(maxY * 0.3, yesButtonY - minDistanceFromYes - noButtonHeight) + padding
+          }
+        } else if (randomFactor < 0.75) {
+          // Left area (to the left of YES button)
+          const leftMaxX = Math.min(maxX * 0.4, yesButtonX - minDistanceFromYes - noButtonWidth)
+          if (leftMaxX > padding) {
+            newX = Math.random() * (leftMaxX - padding) + padding
             newY = Math.random() * (maxY - padding) + padding
           } else {
-            newX = Math.random() * (maxX * 0.4) + (maxX * 0.6)
+            // If no space on left, try right
+            const rightStartX = yesButtonX + yesButtonWidth + minDistanceFromYes
+            if (rightStartX < maxX) {
+              newX = Math.random() * (maxX - rightStartX) + rightStartX
+              newY = Math.random() * (maxY - padding) + padding
+            } else {
+              // Fallback to top
+              newX = Math.random() * (maxX - padding) + padding
+              newY = Math.random() * Math.min(maxY * 0.3, yesButtonY - minDistanceFromYes - noButtonHeight) + padding
+            }
+          }
+        } else {
+          // Right area (to the right of YES button)
+          const rightStartX = yesButtonX + yesButtonWidth + minDistanceFromYes
+          if (rightStartX < maxX) {
+            newX = Math.random() * (maxX - rightStartX) + rightStartX
             newY = Math.random() * (maxY - padding) + padding
+          } else {
+            // If no space on right, try left
+            const leftMaxX = Math.min(maxX * 0.4, yesButtonX - minDistanceFromYes - noButtonWidth)
+            if (leftMaxX > padding) {
+              newX = Math.random() * (leftMaxX - padding) + padding
+              newY = Math.random() * (maxY - padding) + padding
+            } else {
+              // Fallback to top
+              newX = Math.random() * (maxX - padding) + padding
+              newY = Math.random() * Math.min(maxY * 0.3, yesButtonY - minDistanceFromYes - noButtonHeight) + padding
+            }
           }
         }
+        
+        // Ensure position is within bounds
+        newX = Math.max(padding, Math.min(newX, maxX))
+        newY = Math.max(padding, Math.min(newY, maxY))
+        
+        // Check if new position overlaps with YES button (with safety margin)
+        const noButtonRight = newX + noButtonWidth
+        const noButtonBottom = newY + noButtonHeight
+        const yesButtonRight = yesButtonX + yesButtonWidth
+        const yesButtonBottom = yesButtonY + yesButtonHeight
+        
+        const overlapsYes = !(
+          noButtonRight + minDistanceFromYes <= yesButtonX || // NO is completely to the left
+          newX >= yesButtonRight + minDistanceFromYes ||      // NO is completely to the right
+          noButtonBottom + minDistanceFromYes <= yesButtonY || // NO is completely above
+          newY >= yesButtonBottom + minDistanceFromYes         // NO is completely below
+        )
+        
+        // Also check minimum distance from current position
+        const minDistanceFromCurrent = 60
+        const farEnoughFromCurrent = (
+          Math.abs(newX - noButtonPosition.x) >= minDistanceFromCurrent ||
+          Math.abs(newY - noButtonPosition.y) >= minDistanceFromCurrent
+        )
+        
+        if (!overlapsYes && farEnoughFromCurrent) {
+          validPosition = true
+        }
+        
         attempts++
-        // Ensure minimum distance of 80px from current position, or try different area
-      } while (
-        attempts < 10 && 
-        Math.abs(newX - noButtonPosition.x) < 80 && 
-        Math.abs(newY - noButtonPosition.y) < 80
-      )
+      }
       
-      setNoButtonPosition({ x: newX, y: newY })
+      // If we couldn't find a valid position after many attempts, place it in a safe corner
+      if (!validPosition) {
+        // Try corners that are definitely away from YES button
+        const corners = [
+          { x: padding, y: padding }, // Top-left
+          { x: maxX, y: padding },    // Top-right
+          { x: padding, y: maxY },    // Bottom-left
+          { x: maxX, y: maxY }        // Bottom-right
+        ]
+        
+        for (const corner of corners) {
+          const cornerRight = corner.x + noButtonWidth
+          const cornerBottom = corner.y + noButtonHeight
+          const yesButtonRight = yesButtonX + yesButtonWidth
+          const yesButtonBottom = yesButtonY + yesButtonHeight
+          
+          const cornerOverlaps = !(
+            cornerRight + minDistanceFromYes <= yesButtonX ||
+            corner.x >= yesButtonRight + minDistanceFromYes ||
+            cornerBottom + minDistanceFromYes <= yesButtonY ||
+            corner.y >= yesButtonBottom + minDistanceFromYes
+          )
+          
+          if (!cornerOverlaps) {
+            newX = corner.x
+            newY = corner.y
+            validPosition = true
+            break
+          }
+        }
+      }
+      
+      if (validPosition) {
+        setNoButtonPosition({ x: newX, y: newY })
+      }
     }
   }
 
@@ -161,6 +269,7 @@ function Question() {
         
         <div className="buttons-container" ref={buttonsContainerRef}>
           <button 
+            ref={yesButtonRef}
             onClick={handleYes} 
             className="yes-button"
           >
